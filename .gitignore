@@ -3,4 +3,8 @@
 *.pcap
 *.pcapng
 
+# Ignore the venv (requirements is given so they can make it themselves)
 .venv/
+
+# Ignore editor
+.vscode/

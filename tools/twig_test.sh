@@ -74,7 +74,8 @@ IFACE_ARG="${ADDRESS}_${PREFIX}"
 
 ## start the shim - this will take posession of the shell until you kill it.
 
-sudo python3 shim.py -n "${IFACE_ARG}" -i "${EXT_IFACE_NAME}" # -d #(feel free to add -d to enable debugging output.)
+# hardcoded a venv file
+sudo ../.venv/bin/python shim.py -n "${IFACE_ARG}" -i "${EXT_IFACE_NAME}" # -d #(feel free to add -d to enable debugging output.)
 
 exit 0
 
