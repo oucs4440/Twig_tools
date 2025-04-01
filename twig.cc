@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/uio.h>
 #include <netinet/in.h>
 #include <cstring>
 #include <iostream>
@@ -11,10 +12,11 @@
 
 // Global vars
 
-int debug=0;
-int twig_debug=0;
+int debug = 0;
+int twig_debug = 0;
+int fd = 0; // initiate to 0 as stdin file descriptor (if not stdin then it will be changed)
 
-// Function declarations 
+// Debug function declarations  
 
 void print_ethernet(struct eth_hdr *peh);
 
@@ -27,6 +29,13 @@ void print_IPv4(IPv4 *ipv4);
 void print_Arp(ARP *arp);
 
 void print_ICMP(ICMP *icmp);
+
+
+// Actual function declaration
+void do_ICMP(ICMP *icmp);
+
+u_short ICMP_checksum_maker(u_short *buffer, int size);
+
 
 /* 
  * the output should be formatted identically to this command:
@@ -61,9 +70,8 @@ int main(int argc, char *argv[])
 	if (debug) printf("Trying to read from file '%s'\n", filename);
 
 	/* now open the file (or if the filename is "-" make it read from standard input)*/
-	int fd = 0; // initiate to 0 as stdin file descriptor (if not stdin then it will be changed)
 	if(strcmp(filename, "-") != 0) {
-		fd = open(filename, O_RDONLY);
+		fd = open(filename, O_RDWR);
 		if(debug) printf("fd: %d\n", fd);
 		if (fd < 0) {
 			if(debug) printf("fd: %d < 0\n", fd);
@@ -198,7 +206,8 @@ int main(int argc, char *argv[])
                 {
                     if(twig_debug) printf("### We got ourselves an ICMP header ###\n");
                     ICMP *icmp = (ICMP *)(packet_buffer + sizeof(eth_hdr) + sizeof(IPv4));
-                    print_ICMP(icmp);
+                    if(twig_debug) print_ICMP(icmp);
+                    do_ICMP(icmp);
                 }
 				break;
             }
@@ -286,9 +295,74 @@ void print_Arp(ARP *arp) {
 void print_ICMP(ICMP *icmp){
     printf("\tICMP:\tType:\t%d\n", icmp->type);
     printf("\t\tCode:\t%d\n", icmp->code);
-    printf("\t\tCSum:\t%d\n", ntohs(icmp->csum));
+    printf("\t\tCSum:\t%d\n", ntohs(icmp->checksum));
     if (icmp->type == 0 || icmp->type == 8) { // Echo reply or request
         printf("\t\tID:\t%d\n", ntohs(icmp->id));
         printf("\t\tSeq:\t%d\n", ntohs(icmp->seq));
     }
+}
+
+void do_ICMP(ICMP *icmp){
+	ICMP *reply = (ICMP *)malloc(sizeof(ICMP));
+	if (!reply) {
+		fprintf(stderr, "Memory allocation failed for ICMP reply\n");
+		exit(1);
+	}
+
+    if(icmp->type == 8) // We got an echo request (ping), we must reply!!! I've been pinged!!!!!!
+    {
+
+		// Calculate checksum after setting all fields
+        reply->type = 0;
+        reply->code = 0;
+		reply->id = icmp->id;
+		reply->seq = icmp->seq;
+		reply->checksum = 0; // Temporary value, will be calculated later
+		reply->checksum = ICMP_checksum_maker((u_short *)reply, sizeof(ICMP));
+    }
+
+	if(twig_debug)
+	{
+		printf("Attempting to write reply to pcap file\n");
+		printf("ICMP Reply:\n");
+		print_ICMP(reply);
+	}
+	// Time to write to pcap file
+
+	iovec packet[1]; // Reduce size to 1 as only one element is used
+
+	packet[0].iov_base = (reply);
+	packet[0].iov_len = static_cast<size_t>(sizeof(ICMP));
+
+	int iovcnt = sizeof(packet) / sizeof(struct iovec);
+
+	size_t bytes_written = writev(fd, (const iovec *)packet, iovcnt);
+	if (bytes_written < 0) {
+		perror("writev failed");
+		free(reply);
+		exit(1);
+	}
+
+}
+
+u_short ICMP_checksum_maker(u_short *buffer, int size) {
+	unsigned long sum = 0;
+
+	// Sum up 16-bit words
+	while (size > 1) {
+		sum += *buffer++;
+		size -= 2;
+	}
+
+	// Add any remaining byte
+	if (size == 1) {
+		sum += *(u_char *)buffer;
+	}
+
+	// Fold 32-bit sum to 16 bits
+	while (sum >> 16) {
+		sum = (sum & 0xFFFF) + (sum >> 16);
+	}
+
+	return ~sum;
 }

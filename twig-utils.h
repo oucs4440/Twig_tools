@@ -108,9 +108,10 @@ struct TCP {
 struct ICMP {
     u_char type;
     u_char code;
-    u_short csum;
+    u_short checksum;
     u_short id;
     u_short seq;
+    
 };
 
 

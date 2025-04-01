@@ -1,5 +1,6 @@
 # Created for a Data Communications Project
-Professor: Dr. Ostermann, EECS department at Ohio University
+Professor: Dr. Ostermann, EECS department at Ohio University<br>
+Tools provided by our GA: Silas Springer
 
 ## Project expectations:
 This assignment is intended to tie together all of the concepts that we’ve discussed so far. You’re going to
@@ -48,13 +49,32 @@ Where:
 - Old is code from previous projects relevant to this.
 
 ## Running the project
-To run on the hardcoded IP (root is required):
+**IMPORTANT** note:
+- Uhhhh I'm skilled with bash but not *that* much.
+- Create a venv for python because you'll need certain packages (create in Twig root).
 ```sh
-sudo twig_tester.sh
+$ python -m venv .venv
+$ pip install -r requirements.txt
 ```
-This will run make on twig and run the required tools.
+- I edited the original tools file so it works with a venv but it's hardcoded.
+
+The tools are used to create the pcap dmp file. It does not close on it's own (not my fault). You'll have to ^C it and then close the terminal (or ^\).<br>
+
+### tools/twig_test.sh
+This is how we actively keep our eyes open for ping requests and such.
+```sh
+$ cd tools
+$ sudo ./twig_test.sh
+```
+Then if you ping the IP {172.31.128.0} it *should* write to the file.
 
 ### twig_tester.sh
+Designed to run on the IP, but could be configured to use different dmps (not required on my end so I won't). <br>
+To run on the hardcoded IP (root is required):
+```sh
+$ sudo twig_tester.sh
+```
+This will run make on twig and run the required tools.
 ```sh
 Usage: sudo ./twig_tester [-d,-td] filename
 ``` 
