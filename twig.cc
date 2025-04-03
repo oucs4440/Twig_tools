@@ -54,6 +54,7 @@ int main(int argc, char *argv[])
 		filename = argv[1];
 	} else if ((argc == 3) && (strcmp(argv[1],"-d") == 0)) {
 		debug = 1;
+		twig_debug = 1;
 		filename = argv[2];
 	}
 	else if ((argc == 3) && (strcmp(argv[1],"-n") == 0)) {
@@ -219,6 +220,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		// break;   // to prevent infinite loop until you fix logic
+		usleep(100000); // Delay
 	}
 }
 
@@ -313,10 +315,8 @@ void do_ICMP(ICMP *icmp){
     {
 
 		// Calculate checksum after setting all fields
-        reply->type = 0;
-        reply->code = 0;
-		reply->id = icmp->id;
-		reply->seq = icmp->seq;
+		reply = icmp;
+        reply->type = 0; // Echo reply
 		reply->checksum = 0; // Temporary value, will be calculated later
 		reply->checksum = ICMP_checksum_maker((u_short *)reply, sizeof(ICMP));
     }
@@ -329,18 +329,23 @@ void do_ICMP(ICMP *icmp){
 	}
 	// Time to write to pcap file
 
-	iovec packet[1]; // Reduce size to 1 as only one element is used
+	iovec packet[10]; // Reduce size to 1 as only one element is used
+
+	// packet header, ethernet header, data
 
 	packet[0].iov_base = (reply);
-	packet[0].iov_len = static_cast<size_t>(sizeof(ICMP));
+	packet[0].iov_len = reply->length(); // 8 bytes for the iov_len
 
-	int iovcnt = sizeof(packet) / sizeof(struct iovec);
 
-	size_t bytes_written = writev(fd, (const iovec *)packet, iovcnt);
-	if (bytes_written < 0) {
+	if(writev(0, packet, 1) == -1)
+	{
 		perror("writev failed");
 		free(reply);
 		exit(1);
+	}
+	if(twig_debug)
+	{
+		printf("Wrote %zu bytes to file descriptor %d\n", packet[0].iov_len, fd);
 	}
 
 }

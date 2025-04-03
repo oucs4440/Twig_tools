@@ -111,7 +111,12 @@ struct ICMP {
     u_short checksum;
     u_short id;
     u_short seq;
-    
+
+    u_char data[0]; // Variable length data
+
+    size_t length() const {
+        return sizeof(u_char)*2 + sizeof(u_short)*3 + sizeof(data);
+    }
 };
 
 

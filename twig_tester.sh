@@ -23,3 +23,7 @@ fi
 
 # Clean up after ourselves
 rm twig
+
+sudo cp tools/172.31.128.0_24.dmp /mnt/c/Users/kaleb/OneDrive/Desktop/172.31.128.0_24.dmp
+echo "Copied 172.31.128.0_24.dmp to /mnt/c/Users/kaleb/OneDrive/Desktop/172.31.128.0_24.dmp"
+
