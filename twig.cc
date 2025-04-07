@@ -32,9 +32,13 @@ void print_ICMP(ICMP *icmp);
 
 
 // Actual function declaration
-void do_ICMP(ICMP *icmp);
+void do_ICMP(eth_hdr *ehead, IPv4 *ip, ICMP *icmp);
 
 u_short ICMP_checksum_maker(u_short *buffer, int size);
+
+u_short IPv4_checksum_maker(u_short *buffer, int size);
+
+void build_and_send(eth_hdr *ehead, IPv4 *ip, ICMP *icmp, int size);
 
 
 /* 
@@ -208,7 +212,7 @@ int main(int argc, char *argv[])
                     if(twig_debug) printf("### We got ourselves an ICMP header ###\n");
                     ICMP *icmp = (ICMP *)(packet_buffer + sizeof(eth_hdr) + sizeof(IPv4));
                     if(twig_debug) print_ICMP(icmp);
-                    do_ICMP(icmp);
+                    do_ICMP(eh, ip_head, icmp);
                 }
 				break;
             }
@@ -304,10 +308,27 @@ void print_ICMP(ICMP *icmp){
     }
 }
 
-void do_ICMP(ICMP *icmp){
+void do_ICMP(eth_hdr *ehead, IPv4 *ip, ICMP *icmp){
 	ICMP *reply = (ICMP *)malloc(sizeof(ICMP));
 	if (!reply) {
 		fprintf(stderr, "Memory allocation failed for ICMP reply\n");
+		exit(1);
+	}
+
+	// ethernet header
+	eth_hdr *eh = (eth_hdr *)malloc(sizeof(eth_hdr));
+	if (!eh) {
+		fprintf(stderr, "Memory allocation failed for ethernet header\n");
+		free(reply);
+		exit(1);
+	}
+
+	//IPv4 header
+	IPv4 *ip_head = (IPv4 *)malloc(sizeof(IPv4));
+	if (!ip_head) {
+		fprintf(stderr, "Memory allocation failed for IPv4 header\n");
+		free(reply);
+		free(eh);
 		exit(1);
 	}
 
@@ -319,6 +340,25 @@ void do_ICMP(ICMP *icmp){
         reply->type = 0; // Echo reply
 		reply->checksum = 0; // Temporary value, will be calculated later
 		reply->checksum = ICMP_checksum_maker((u_short *)reply, sizeof(ICMP));
+
+		// Copy the ethernet header and IP headers
+
+
+		memcpy(eh, ehead, sizeof(eth_hdr));
+		memcpy(eh->dest, ehead->src, 6); // Swap source and destination MAC addresses
+		memcpy(eh->src, ehead->dest, 6);
+
+
+		memcpy(ip_head, ip, sizeof(IPv4));
+		memcpy(ip_head->dest, ip->src, 4); // Swap source and destination IP addresses
+		memcpy(ip_head->src, ip->dest, 4);
+		ip_head->csum = 0; // Temporary value, will be calculated later
+		ip_head->csum = IPv4_checksum_maker((u_short *)ip_head, sizeof(IPv4));
+		ip_head->len = htons(sizeof(IPv4) + sizeof(ICMP)); // Set the length of the IP header
+		ip_head->frag_ident = htons(0); // Set the fragment identifier to 0
+		ip_head->frag_offset = htons(0); // Set the fragment offset to 0
+		ip_head->ttl = 64; // Set the TTL to 64
+
     }
 
 	if(twig_debug)
@@ -327,26 +367,9 @@ void do_ICMP(ICMP *icmp){
 		printf("ICMP Reply:\n");
 		print_ICMP(reply);
 	}
-	// Time to write to pcap file
 
-	iovec packet[10]; // Reduce size to 1 as only one element is used
+	build_and_send(ehead, ip_head, reply, sizeof(ICMP));
 
-	// packet header, ethernet header, data
-
-	packet[0].iov_base = (reply);
-	packet[0].iov_len = reply->length(); // 8 bytes for the iov_len
-
-
-	if(writev(0, packet, 1) == -1)
-	{
-		perror("writev failed");
-		free(reply);
-		exit(1);
-	}
-	if(twig_debug)
-	{
-		printf("Wrote %zu bytes to file descriptor %d\n", packet[0].iov_len, fd);
-	}
 
 }
 
@@ -370,4 +393,53 @@ u_short ICMP_checksum_maker(u_short *buffer, int size) {
 	}
 
 	return ~sum;
+}
+
+u_short IPv4_checksum_maker(u_short *buffer, int size)
+{
+	unsigned long sum = 0;
+
+	// Sum up 16-bit words
+	while (size > 1) {
+		sum += *buffer++;
+		size -= 2;
+	}
+
+	// Add any remaining byte
+	if (size == 1) {
+		sum += *(u_char *)buffer;
+	}
+
+	// Fold 32-bit sum to 16 bits
+	while (sum >> 16) {
+		sum = (sum & 0xFFFF) + (sum >> 16);
+	}
+
+	return ~sum;
+}
+
+void build_and_send(eth_hdr *ehead, IPv4 *ip, ICMP *icmp, int size) {
+	// Build the packet here
+
+	// Send the packet here
+	// Time to write to pcap file
+
+	iovec packet[10]; // Reduce size to 1 as only one element is used
+
+	// packet header, ethernet header, data
+	packet[0].iov_base = (char *)ehead; // ehead is the ethernet header
+	packet[0].iov_len = sizeof(eth_hdr); // 14 bytes for the iov_len
+	packet[1].iov_base = (char *)ip; // ip is the IPv4 header
+	packet[1].iov_len = sizeof(IPv4); // 20 bytes for the iov_len
+	packet[2].iov_base = (icmp);
+	packet[2].iov_len = icmp->length(); // 8 bytes for the iov_len
+
+
+	if(writev(fd, packet, 3) == -1)
+	{
+		perror("writev failed");
+		free(icmp);
+		exit(1);
+	}
+
 }
