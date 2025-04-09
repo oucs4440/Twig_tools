@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 		
 		if (ret == 0) {
 			usleep(30000); // Delay
-			break;
+			continue;
 		}
 		
 		if(ret != sizeof(pph)) {
@@ -360,10 +360,15 @@ void do_ICMP(ICMP_packet *packet, size_t size){
 		icmp_reply.seq = packet->icmp.seq; // Copy the sequence number from the request
 		icmp_reply.checksum = 0; // Temporary value, will be calculated later
 		reply->icmp = icmp_reply; // Assign the modified ICMP header to the reply
+
+		// TODO fix checksum
+		u_short icmp_temp[sizeof(ICMP) + size];
+		memccpy(icmp_temp, &reply->icmp, 0, sizeof(ICMP)); // Copy the ICMP header to a temporary buffer
+		memccpy(icmp_temp + sizeof(ICMP), packet->payload, 0, size); // Copy the payload to the temporary buffer 
 		
 		// Calculate checksum after setting all fields
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-		reply->icmp.checksum = ICMP_checksum_maker((u_short *)&reply->icmp, size + sizeof(ICMP)); // Calculate the checksum for the ICMP header		
+		reply->icmp.checksum = ICMP_checksum_maker(icmp_temp, sizeof(ICMP) + size); // Calculate the checksum for the ICMP header		
 		
 
 		// Copy the ethernet header and IP headers
@@ -375,7 +380,7 @@ void do_ICMP(ICMP_packet *packet, size_t size){
 		reply->ip = packet->ip; // Copy the IP header
 		memcpy(reply->ip.dest, packet->ip.src, 4); // Swap source and destination IP addresses
 		memcpy(reply->ip.src, packet->ip.dest, 4);
-		reply->ip.len = htons(sizeof(IPv4) + sizeof(ICMP)); // Set the length of the IP header
+		reply->ip.len = htons(sizeof(IPv4) + sizeof(ICMP) + size); // Set the length of the IP header
 		reply->ip.frag_ident = htons(0); // Set the fragment identifier to 0
 		reply->ip.frag_offset = htons(0); // Set the fragment offset to 0
 		reply->ip.ttl = 64; // Set the TTL to 64

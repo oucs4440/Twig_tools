@@ -119,7 +119,7 @@ struct ICMP {
 };
 
 
-struct __attribute__((__packed__)) ICMP_packet {
+struct __attribute__((__packed__)) ICMP_packet { // thank you Silas
     pcap_pkthdr phead;
     eth_hdr ehead;
     IPv4 ip;
