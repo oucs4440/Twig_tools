@@ -35,14 +35,13 @@ void print_ICMP(ICMP *icmp);
 
 
 // Actual function declaration
-void do_ICMP(pcap_pkthdr phead, eth_hdr *ehead, IPv4 *ip, ICMP *icmp);
+void do_ICMP(ICMP_packet *packet, size_t size);
 
 u_short ICMP_checksum_maker(u_short *buffer, int size);
 
 u_short IPv4_checksum_maker(u_short *buffer, int size);
 
-void build_and_send(pcap_pkthdr phead, eth_hdr *ehead, IPv4 *ip, ICMP *icmp, int size);
-
+void build_and_send(ICMP_packet *packet, size_t size);
 
 /* 
  * the output should be formatted identically to this command:
@@ -78,8 +77,8 @@ int main(int argc, char *argv[])
 
 	/* now open the file (or if the filename is "-" make it read from standard input)*/
 	if(strcmp(filename, "-") != 0) {
-		fd = open(filename, O_RDWR);
-		// fd = open(filename, O_RDWR | O_APPEND);
+		// fd = open(filename, O_RDWR);
+		fd = open(filename, O_RDWR | O_APPEND);
 		if(debug) printf("fd: %d\n", fd);
 		if (fd < 0) {
 			if(debug) printf("fd: %d < 0\n", fd);
@@ -157,6 +156,7 @@ int main(int argc, char *argv[])
 		}
 		
 		if (ret == 0) {
+			usleep(30000); // Delay
 			break;
 		}
 		
@@ -216,14 +216,35 @@ int main(int argc, char *argv[])
                 if(ip_head->type == 1) 
                 {
 					ICMP *icmp = (ICMP *)(packet_buffer + sizeof(eth_hdr) + sizeof(IPv4));
+					char* payload = packet_buffer + (sizeof(eth_hdr) + sizeof(IPv4) + sizeof(ICMP));
+					size_t size = (pph.caplen - sizeof(eth_hdr) - sizeof(IPv4) - sizeof(ICMP));
+					
+					ICMP_packet *packet;
+					packet = (ICMP_packet *)malloc(sizeof(ICMP_packet)); // Allocate memory for the ICMP packet
+					if(packet == NULL) {
+						perror("malloc failed for ICMP_packet");
+						exit(1);
+					}
+					memcpy(&packet->phead, &pph, sizeof(pph));
+					memcpy(&packet->ehead, eh, sizeof(eth_hdr));
+					memcpy(&packet->ip, ip_head, sizeof(IPv4));
+					memcpy(&packet->icmp, icmp, sizeof(ICMP));
+					memcpy(packet->payload, payload, size);
+
                     if(twig_debug)
 					{
 						printf("### We got ourselves an ICMP header ###\n");
 						print_ethernet(eh);
 						print_IPv4(ip_head);
 						print_ICMP(icmp);
+						printf("Payload: ");
+						// Print the payload for debugging
+						for (size_t i = 0; i < size; i++) {
+							printf("%02x ", packet->payload[i]);
+						}
+						printf("\n Of size: %zu\n", size);
 					}
-                    do_ICMP(pph, eh, ip_head, icmp);
+                    do_ICMP(packet, size);
                 }
 				break;
             }
@@ -234,7 +255,6 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
-		usleep(100000); // Delay
 	}
 }
 
@@ -318,80 +338,64 @@ void print_ICMP(ICMP *icmp){
     }
 }
 
-void do_ICMP(pcap_pkthdr phead, eth_hdr *ehead, IPv4 *ip, ICMP *icmp){
-	ICMP *reply = (ICMP *)malloc(sizeof(ICMP));
-	if (!reply) {
-		fprintf(stderr, "Memory allocation failed for ICMP reply\n");
+void do_ICMP(ICMP_packet *packet, size_t size){
+	// Build the ICMP packet
+	ICMP_packet *reply;
+	reply = (ICMP_packet *)malloc(sizeof(ICMP_packet)); // Allocate memory for the ICMP packet
+	
+	if(reply == NULL) {
+		perror("malloc failed for ICMP_packet reply");
 		exit(1);
 	}
+	
+	ICMP icmp_reply = packet->icmp; 
 
-	// ethernet header
-	eth_hdr *eh = (eth_hdr *)malloc(sizeof(eth_hdr));
-	if (!eh) {
-		fprintf(stderr, "Memory allocation failed for ethernet header\n");
-		free(reply);
-		exit(1);
-	}
-
-	//IPv4 header
-	IPv4 *ip_head = (IPv4 *)malloc(sizeof(IPv4));
-	if (!ip_head) {
-		fprintf(stderr, "Memory allocation failed for IPv4 header\n");
-		free(reply);
-		free(eh);
-		exit(1);
-	}
-
-    if(icmp->type == 8) // We got an echo request (ping), we must reply!!! I've been pinged!!!!!!
+	
+	if(packet->icmp.type == 8) // We got an echo request (ping), we must reply!!! I've been pinged!!!!!!
     {
-
+		
+        icmp_reply.type = 0; // Echo icmp_reply
+		icmp_reply.code = 0; // Code for echo icmp_reply
+		icmp_reply.id = packet->icmp.id; // Copy the ID from the request
+		icmp_reply.seq = packet->icmp.seq; // Copy the sequence number from the request
+		icmp_reply.checksum = 0; // Temporary value, will be calculated later
+		reply->icmp = icmp_reply; // Assign the modified ICMP header to the reply
+		
 		// Calculate checksum after setting all fields
-		// reply = icmp;
-		reply = (ICMP *)memccpy(reply, icmp, sizeof(ICMP), sizeof(ICMP));
-        reply->type = 0; // Echo reply
-		reply->code = 0; // Code for echo reply
-		reply->id = icmp->id; // Copy the ID from the request
-		reply->seq = icmp->seq; // Copy the sequence number from the request
-		reply->checksum = 0; // Temporary value, will be calculated later
-		reply->checksum = ICMP_checksum_maker((u_short *)reply, sizeof(ICMP));
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+		reply->icmp.checksum = ICMP_checksum_maker((u_short *)&reply->icmp, size + sizeof(ICMP)); // Calculate the checksum for the ICMP header		
+		
 
 		// Copy the ethernet header and IP headers
+		reply->ehead = packet->ehead; // Copy the ethernet header
+		memcpy(reply->ehead.dest, packet->ehead.src, sizeof(reply->ehead.dest)); // Swap source and destination MAC addresses
+		memcpy(reply->ehead.src, packet->ehead.dest, sizeof(reply->ehead.src)); // Swap source and destination MAC addresses
 
 
-		memcpy(eh, ehead, sizeof(eth_hdr));
-		memcpy(eh->dest, ehead->src, 6); // Swap source and destination MAC addresses
-		memcpy(eh->src, ehead->dest, 6);
+		reply->ip = packet->ip; // Copy the IP header
+		memcpy(reply->ip.dest, packet->ip.src, 4); // Swap source and destination IP addresses
+		memcpy(reply->ip.src, packet->ip.dest, 4);
+		reply->ip.len = htons(sizeof(IPv4) + sizeof(ICMP)); // Set the length of the IP header
+		reply->ip.frag_ident = htons(0); // Set the fragment identifier to 0
+		reply->ip.frag_offset = htons(0); // Set the fragment offset to 0
+		reply->ip.ttl = 64; // Set the TTL to 64
+		reply->ip.csum = 0; // Temporary value, will be calculated later
 
+		memcpy(reply->payload, packet->payload, size); // Copy the payload from the original packet
 
-		memcpy(ip_head, ip, sizeof(IPv4));
-		memcpy(ip_head->dest, ip->src, 4); // Swap source and destination IP addresses
-		memcpy(ip_head->src, ip->dest, 4);
-		ip_head->len = htons(sizeof(IPv4) + sizeof(ICMP)); // Set the length of the IP header
-		ip_head->frag_ident = htons(0); // Set the fragment identifier to 0
-		ip_head->frag_offset = htons(0); // Set the fragment offset to 0
-		ip_head->ttl = 64; // Set the TTL to 64
-		ip_head->csum = 0; // Temporary value, will be calculated later
-		ip_head->csum = IPv4_checksum_maker((u_short *)ip_head, sizeof(IPv4));
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+		reply->ip.csum = IPv4_checksum_maker((u_short *)&reply->ip, sizeof(IPv4)); // Calculate the checksum for the IP header
 
-		if(twig_debug)
-		{
-			printf("### ICMP Reply ###\n");
-			print_ethernet(eh); // Print the ethernet header for debugging
-			print_IPv4(ip_head); // Print the IPv4 header for debugging
-			print_ICMP(reply); // Print the ICMP header for debugging
-		}
     }
 
 	if(twig_debug)
 	{
 		printf("Attempting to write reply to pcap file\n");
 		printf("ICMP Reply:\n");
-		print_ICMP(reply);
+		print_ICMP(&reply->icmp);
 	}
 
-	build_and_send(phead, ehead, ip_head, reply, sizeof(ICMP));
-
-
+	build_and_send(reply, size);
 }
 
 u_short ICMP_checksum_maker(u_short *buffer, int size) {
@@ -439,12 +443,15 @@ u_short IPv4_checksum_maker(u_short *buffer, int size)
 	return ~sum;
 }
 
-void build_and_send(pcap_pkthdr phead, eth_hdr *ehead, IPv4 *ip, ICMP *icmp, int size) {
+void build_and_send(ICMP_packet *packet, size_t size) {
 	// Time to write to pcap file
+	pcap_pkthdr phead = packet->phead;
+	ICMP icmp = packet->icmp;
+
 	pcap_pkthdr pph;
-	pph.ts_secs = phead.ts_secs; // Use the original timestamp directly without htons
-	pph.ts_usecs = phead.ts_usecs; // Preserve the original microseconds
-	pph.caplen = sizeof(eth_hdr) + sizeof(IPv4) + sizeof(ICMP); // Set the captured length
+	pph.ts_secs = htons(phead.ts_secs); // Use the original timestamp directly without htons
+	pph.ts_usecs = htons(phead.ts_usecs); // Preserve the original microseconds
+	pph.caplen = sizeof(eth_hdr) + sizeof(IPv4) + icmp.length() + size; // Dynamically calculate the captured length, including the ICMP payload size
 	pph.len = pph.caplen; // Set the actual length to the captured length
 
 	if(twig_debug){
@@ -452,40 +459,43 @@ void build_and_send(pcap_pkthdr phead, eth_hdr *ehead, IPv4 *ip, ICMP *icmp, int
 		printf("sizeof(eth_hdr): %zu\n", sizeof(eth_hdr));
 		printf("sizeof(IPv4): %zu\n", sizeof(IPv4));
 		printf("sizeof(ICMP): %zu\n", sizeof(ICMP));
-		printf("ICMP type : %d\n", icmp->type);
+		printf("ICMP type : %d\n", icmp.type);
 	}
-	
-	// Convert headers to network byte order
-	// if(byteswap){
-	// 	ehead->type = htons(ehead->type); // Ethernet type to network byte order
-	// 	ip->len = htons(ntohs(ip->len)); // IPv4 length to network byte order
-	// 	ip->frag_ident = htons(ntohs(ip->frag_ident)); // Fragment identifier to network byte order
-	// 	ip->frag_offset = htons(ntohs(ip->frag_offset)); // Fragment offset to network byte order
-	// 	ip->csum = htons(ntohs(ip->csum)); // IPv4 checksum to network byte order
-	// 	icmp->checksum = htons(icmp->checksum); // Ensure checksum is in network byte order
-	// }
-	
-	// Build the packet here
-	iovec packet[10]; // Reduce size to 1 as only one element is used
-	// pcap packet header, packet header, ethernet header, data
-	packet[0].iov_base = (char *)&pph; // pph is the pcap packet header
-	packet[0].iov_len = sizeof(pph); // 16 bytes for the iov_len
-	packet[1].iov_base = (char *)ehead; // ehead is the ethernet header
-	packet[1].iov_len = sizeof(eth_hdr); // 14 bytes for the iov_len
-	packet[2].iov_base = (char *)ip; // ip is the IPv4 header
-	packet[2].iov_len = sizeof(IPv4); // 20 bytes for the iov_len
-	packet[3].iov_base = (icmp);
-	packet[3].iov_len = sizeof(ICMP); // 8 bytes for the iov_len
-	
 
-	
-	// Send the packet here
-	if(writev(fd, packet, 4) == -1) // Correct the number of iovec elements to include ICMP
+	if(twig_debug)
+	{
+		printf("### Sending ICMP Reply ###\n");
+		print_ethernet(&packet->ehead); // Print the ethernet header for debugging
+		print_IPv4(&packet->ip); // Print the IPv4 header for debugging
+		print_ICMP(&packet->icmp); // Print the ICMP header for debugging
+		printf("Payload: ");
+		// Print the payload for debugging
+		for (size_t i = 0; i < size; i++) {
+			printf("%02x ", packet->payload[i]);
+		}
+		printf("\n Of size: %zu\n", size);
+		printf("Total size of packet: %u, versus predicted: %zu\n", pph.caplen, sizeof(eth_hdr) + sizeof(IPv4) + sizeof(ICMP) + size);
+	}
+
+	// Build the packet here
+	iovec out_packet[10];
+	// pcap packet header, ethernet header, IP header, ICMP header, and payload
+	out_packet[0].iov_base = &pph;
+	out_packet[0].iov_len = sizeof(pph); 
+	out_packet[1].iov_base = &packet->ehead;
+	out_packet[1].iov_len = sizeof(eth_hdr); // Correctly calculate the size of the ethernet header
+	out_packet[2].iov_base = &packet->ip;
+	out_packet[2].iov_len = sizeof(IPv4); // Correctly calculate the size of the IPv4 header
+	out_packet[3].iov_base = &packet->icmp;
+	out_packet[3].iov_len = sizeof(ICMP); // Correctly calculate the size of the ICMP header
+	out_packet[4].iov_base = packet->payload;
+	out_packet[4].iov_len = size; // Correctly calculate the size of the payload
+
+	// Send the out_packet here
+	if(writev(fd, out_packet, 5) == -1) // Correct the number of iovec elements to include ICMP
 	{
 		perror("writev failed");
-		free(icmp);
-		free(ip);
-		free(ehead);
+		free(packet);
 		exit(1);
 	}
 

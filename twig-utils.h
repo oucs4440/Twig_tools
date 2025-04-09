@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <vector>
 
 #define PCAP_MAGIC 0xa1b2c3d4
 #define PCAP_VERSION_MAJOR 2
@@ -112,12 +113,18 @@ struct ICMP {
     u_short id;
     u_short seq;
 
-    u_char data[0]; // Variable length data
-
     size_t length() const {
-        return sizeof(u_char)*2 + sizeof(u_short)*3 + sizeof(data);
+        return sizeof(u_char)*2 + sizeof(u_short)*3;
     }
 };
 
+
+struct __attribute__((__packed__)) ICMP_packet {
+    pcap_pkthdr phead;
+    eth_hdr ehead;
+    IPv4 ip;
+    ICMP icmp;
+    char payload[65535]; // Flexible array member for ICMP payload
+};
 
 #endif
