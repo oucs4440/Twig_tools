@@ -35,13 +35,25 @@ void print_ICMP(ICMP *icmp);
 
 
 // Actual function declaration
+
+u_short IPv4_checksum_maker(u_short *buffer, int size);
+
+// ICMP stuff
+
 void do_ICMP(ICMP_packet *packet, size_t size);
 
 u_short ICMP_checksum_maker(u_short *buffer, int size);
 
-u_short IPv4_checksum_maker(u_short *buffer, int size);
+void build_and_send_ICMP(ICMP_packet *packet, size_t size);
 
-void build_and_send(ICMP_packet *packet, size_t size);
+// UDP stuff
+
+void do_UDP(UDP_packet *packet, size_t size);
+
+u_short UDP_checksum_maker(u_short *buffer, int size);
+
+void build_and_send_UDP(UDP_packet *packet, size_t size);
+
 
 /* 
  * the output should be formatted identically to this command:
@@ -400,7 +412,7 @@ void do_ICMP(ICMP_packet *packet, size_t size){
 		print_ICMP(&reply->icmp);
 	}
 
-	build_and_send(reply, size);
+	build_and_send_ICMP(reply, size);
 }
 
 u_short ICMP_checksum_maker(u_short *buffer, int size) {
@@ -448,7 +460,7 @@ u_short IPv4_checksum_maker(u_short *buffer, int size)
 	return ~sum;
 }
 
-void build_and_send(ICMP_packet *packet, size_t size) {
+void build_and_send_ICMP(ICMP_packet *packet, size_t size) {
 	// Time to write to pcap file
 	pcap_pkthdr phead = packet->phead;
 	ICMP icmp = packet->icmp;
@@ -505,3 +517,73 @@ void build_and_send(ICMP_packet *packet, size_t size) {
 	}
 
 }
+
+
+void do_UDP(UDP_packet *packet, size_t size)
+{
+	// Build the UDP packet
+	UDP_packet *reply;
+	reply = (UDP_packet *)malloc(sizeof(UDP_packet)); // Allocate memory for the UDP packet
+	if(reply == NULL) {
+		perror("malloc failed for UDP_packet");
+		exit(1);
+	}
+	memcpy(&reply->phead, &packet->phead, sizeof(packet->phead));
+	memcpy(&reply->ehead, &packet->ehead, sizeof(eth_hdr));
+	memcpy(&reply->ip, &packet->ip, sizeof(IPv4));
+	memcpy(&reply->udp, &packet->udp, sizeof(UDP));
+	memcpy(reply->payload, packet->payload, size); // Copy the payload from the original packet
+	
+	if(reply == NULL) {
+		perror("malloc failed for UDP_packet");
+		exit(1);
+	}
+	
+	UDP udp_reply = packet->udp; 
+
+	
+	if(packet->udp.sport == 53) // We got a DNS request, we must reply!!! I've been pinged!!!!!!
+	{
+		
+		udp_reply.sport = 53; // Echo icmp_reply
+		udp_reply.dport = packet->udp.dport; // Copy the ID from the request
+		udp_reply.len = htons(sizeof(UDP) + size); // Set the length of the IP header
+		udp_reply.csum = 0; // Temporary value, will be calculated later
+		reply->udp = udp_reply; // Assign the modified ICMP header to the reply
+
+		// TODO fix checksum
+		u_short udp_temp[sizeof(UDP) + size];
+		memccpy(udp_temp, &reply->udp, 0, sizeof(UDP)); // Copy the ICMP header to a temporary buffer
+		memccpy(udp_temp + sizeof(UDP), packet->payload, 0, size); // Copy the payload to the temporary buffer 
+		
+	}
+}
+
+u_short UDP_checksum_maker(u_short *buffer, int size)
+{
+	unsigned long sum = 0;
+
+	// Sum up 16-bit words
+	while (size > 1) {
+		sum += *buffer++;
+		size -= 2;
+	}
+
+	// Add any remaining byte
+	if (size == 1) {
+		sum += *(u_char *)buffer;
+	}
+
+	// Fold 32-bit sum to 16 bits
+	while (sum >> 16) {
+		sum = (sum & 0xFFFF) + (sum >> 16);
+	}
+
+	return ~sum;
+}
+
+void build_and_send_UDP(UDP_packet *packet, size_t size)
+{
+	// TODO
+}
+

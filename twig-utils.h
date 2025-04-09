@@ -118,12 +118,19 @@ struct ICMP {
     }
 };
 
-
 struct __attribute__((__packed__)) ICMP_packet { // thank you Silas
     pcap_pkthdr phead;
     eth_hdr ehead;
     IPv4 ip;
     ICMP icmp;
+    char payload[65535]; // Flexible array member for ICMP payload
+};
+
+struct __attribute__((__packed__)) UDP_packet { // thank you Silas
+    pcap_pkthdr phead;
+    eth_hdr ehead;
+    IPv4 ip;
+    UDP udp;
     char payload[65535]; // Flexible array member for ICMP payload
 };
 
