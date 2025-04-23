@@ -684,7 +684,7 @@ Start by running the `dockershim.sh` script:
 Now, in a separate terminal window, start your BOWTIE:
 
 ```c
-./CHAIN.sh -d=172.31.127.254
+./BOWTIE.sh -d=172.31.127.254
 ```
 **NOTE: if you change the ip your docker container uses in `dockershim.sh`, change the -d= argument to `BOWTIE.sh` to match.**
 
