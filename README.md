@@ -789,11 +789,9 @@ traceroute to 172.31.5.201 (172.31.5.201), 30 hops max, 60 byte packets
 ```bash
 $ traceroute -N 1 172.31.8.207
 traceroute to 172.31.8.207 (172.31.8.207), 30 hops max, 60 byte packets
- 1  172.31.127.254 (172.31.127.254)  0.071 ms * *
- 2  172.31.128.206 (172.31.128.206)  31.208 ms  28.977 ms  47.371 ms
- 3  172.31.8.204 (172.31.8.204)  42.911 ms  74.180 ms  80.931 ms
- 4  172.31.8.207 (172.31.8.207)  76.002 ms  106.301 ms  112.522 ms
-
+ 1  172.31.127.254 (172.31.127.254)  0.124 ms  0.030 ms  0.009 ms
+ 2  172.31.128.206 (172.31.128.206)  72.009 ms  23.379 ms  32.928 ms
+ 3  172.31.8.207 (172.31.8.207)  47.330 ms  35.393 ms  38.332 ms
 ```
 >Make sure you have a full route to the host, that is that at least all the shrubs appear in the list. 
 >
