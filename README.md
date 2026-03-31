@@ -224,9 +224,9 @@ Key components to make sure are correct:
 	- *You'll know it is running as expected when you see the line `press ctrl+d to stop `*
 4. In **terminal 2**, start your `twig` on the pcap file's network by running the command `./twig -i 172.31.128.2_24`
 	- *this gives your twig an interface with IP `172.31.128.2` on the network `172.31.128.0/24`*
-5. In **terminal 3**, run `./socket_time 172.31.128.2`, then press `Ctrl+c` to stop `socket_time`.
+5. In **terminal 3**, compile socket_time (if not done already) with `make socket_time`
+6. In **terminal 3**, run `./socket_time 172.31.128.2`, then press `Ctrl+c` to stop `socket_time`.
 	- *This is to get around the issue of the first packet being ignored...* 
-6. In **terminal 3**, compile socket_time (if not done already) with `make socket_time`
 7. In **terminal 3**, run the command `./socket_time 172.31.128.2` 
 
 #### Shutdown
